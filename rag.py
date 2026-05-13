@@ -72,25 +72,33 @@ def process_urls(urls):
     yield "Initializing Components"
     initialize_components()
 
-    yield "Resetting vector store...✅"
-    vector_store.reset_collection()
-
-    yield "Loading data...✅"
+    yield "Loading data..."
     loader = UnstructuredURLLoader(urls=urls)
     data = loader.load()
 
-    yield "Splitting text into chunks...✅"
+    if not data:
+        yield "No content could be loaded from the provided URLs. Try a different article URL."
+        return
+
+    yield "Splitting text into chunks..."
     text_splitter = RecursiveCharacterTextSplitter(
         separators=["\n\n", "\n", ".", " "],
         chunk_size=CHUNK_SIZE
     )
     docs = text_splitter.split_documents(data)
 
-    yield "Add chunks to vector database...✅"
+    if not docs:
+        yield "No usable text chunks were found in the provided URLs. Try a different article URL."
+        return
+
+    yield "Resetting vector store..."
+    vector_store.reset_collection()
+
+    yield "Adding chunks to vector database..."
     uuids = [str(uuid4()) for _ in range(len(docs))]
     vector_store.add_documents(docs, ids=uuids)
 
-    yield "Done adding docs to vector database...✅"
+    yield "Done adding docs to vector database."
 
 def generate_answer(query):
     if not vector_store:
