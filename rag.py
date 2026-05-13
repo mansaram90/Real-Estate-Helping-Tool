@@ -75,6 +75,7 @@ def process_urls(urls):
     yield "Loading data..."
     loader = UnstructuredURLLoader(urls=urls)
     data = loader.load()
+    data = [doc for doc in data if doc.page_content and len(doc.page_content.strip()) > 100]
 
     if not data:
         yield "No content could be loaded from the provided URLs. Try a different article URL."
@@ -86,6 +87,7 @@ def process_urls(urls):
         chunk_size=CHUNK_SIZE
     )
     docs = text_splitter.split_documents(data)
+    docs = [doc for doc in docs if doc.page_content and len(doc.page_content.strip()) > 50]
 
     if not docs:
         yield "No usable text chunks were found in the provided URLs. Try a different article URL."
@@ -98,13 +100,15 @@ def process_urls(urls):
     uuids = [str(uuid4()) for _ in range(len(docs))]
     vector_store.add_documents(docs, ids=uuids)
 
-    yield "Done adding docs to vector database."
+    yield f"Done adding {len(docs)} chunks to vector database."
 
 def generate_answer(query):
-    if not vector_store:
-        raise RuntimeError("Vector database is not initialized ")
+    initialize_components()
+    if vector_store._collection.count() == 0:
+        raise RuntimeError("Vector database is empty. Process URLs first.")
 
-    chain = RetrievalQAWithSourcesChain.from_llm(llm=llm, retriever=vector_store.as_retriever())
+    retriever = vector_store.as_retriever(search_kwargs={"k": 6})
+    chain = RetrievalQAWithSourcesChain.from_llm(llm=llm, retriever=retriever)
     result = chain.invoke({"question": query}, return_only_outputs=True)
     sources = result.get("sources", "")
 
