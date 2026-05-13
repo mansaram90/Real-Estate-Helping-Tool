@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from langchain_classic.chains import RetrievalQAWithSourcesChain
 from langchain_community.document_loaders import UnstructuredURLLoader
+from langchain_community.document_loaders import WebBaseLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_groq import ChatGroq
@@ -18,6 +19,7 @@ CHUNK_SIZE = 1000
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 VECTORSTORE_DIR = Path(__file__).parent / "resources/vectorstore"
 COLLECTION_NAME = "real_estate"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 llm = None
 vector_store = None
@@ -63,6 +65,33 @@ def initialize_components():
         )
 
 
+def load_url_documents(urls):
+    # Original loader code kept for reference:
+    # loader = UnstructuredURLLoader(urls=urls)
+    # data = loader.load()
+    loader = UnstructuredURLLoader(urls=urls)
+    data = loader.load()
+
+    readable_docs = [
+        doc for doc in data
+        if doc.page_content and len(doc.page_content.strip()) > 100
+    ]
+    if readable_docs:
+        return data, readable_docs, "UnstructuredURLLoader"
+
+    web_loader = WebBaseLoader(
+        web_paths=urls,
+        header_template={"User-Agent": USER_AGENT}
+    )
+    fallback_data = web_loader.load()
+    fallback_readable_docs = [
+        doc for doc in fallback_data
+        if doc.page_content and len(doc.page_content.strip()) > 100
+    ]
+
+    return fallback_data, fallback_readable_docs, "WebBaseLoader fallback"
+
+
 def process_urls(urls):
     """
     This function scraps data from a url and stores it in a vector db
@@ -73,9 +102,8 @@ def process_urls(urls):
     initialize_components()
 
     yield "Loading data..."
-    loader = UnstructuredURLLoader(urls=urls)
-    data = loader.load()
-    data = [doc for doc in data if doc.page_content and len(doc.page_content.strip()) > 100]
+    raw_data, data, loader_name = load_url_documents(urls)
+    yield f"{loader_name} loaded {len(raw_data)} raw documents and kept {len(data)} readable documents."
 
     if not data:
         yield "No content could be loaded from the provided URLs. Try a different article URL."
@@ -87,7 +115,9 @@ def process_urls(urls):
         chunk_size=CHUNK_SIZE
     )
     docs = text_splitter.split_documents(data)
+    yield f"Created {len(docs)} raw chunks."
     docs = [doc for doc in docs if doc.page_content and len(doc.page_content.strip()) > 50]
+    yield f"Kept {len(docs)} readable chunks."
 
     if not docs:
         yield "No usable text chunks were found in the provided URLs. Try a different article URL."
