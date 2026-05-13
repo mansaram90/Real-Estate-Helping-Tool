@@ -1,6 +1,7 @@
 # @Author: Dhaval Patel Copyrights Codebasics Inc. and LearnerX Pvt Ltd.
 
 from uuid import uuid4
+import os
 from dotenv import load_dotenv
 from pathlib import Path
 from langchain_classic.chains import RetrievalQAWithSourcesChain
@@ -22,11 +23,32 @@ llm = None
 vector_store = None
 
 
+def get_groq_api_key():
+    api_key = os.getenv("GROQ_API_KEY")
+    if api_key:
+        return api_key
+
+    try:
+        import streamlit as st
+        return st.secrets.get("GROQ_API_KEY")
+    except Exception:
+        return None
+
+
 def initialize_components():
     global llm, vector_store
 
     if llm is None:
-        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.9, max_tokens=500)
+        api_key = get_groq_api_key()
+        if not api_key:
+            raise RuntimeError("Missing GROQ_API_KEY. Add it to your .env file locally or Streamlit Cloud secrets.")
+
+        llm = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            temperature=0.9,
+            max_tokens=500,
+            api_key=api_key
+        )
 
     if vector_store is None:
         ef = HuggingFaceEmbeddings(
